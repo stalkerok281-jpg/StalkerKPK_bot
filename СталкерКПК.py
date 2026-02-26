@@ -6,16 +6,19 @@ from typing import List, Dict, Optional
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message, ChatMemberUpdated
+from aiogram.types import Message
 from aiogram.utils.markdown import bold
 
 # ==================== НАСТРОЙКИ ====================
-TOKEN = "7657570493:AAFqKUxdGQIcLRMGEkenDKaciqOoYv7K1QI"  # Замените на токен вашего бота
+TOKEN = "YOUR_BOT_TOKEN_HERE"  # Замените на токен вашего бота
 
 # Интервалы отправки (в секундах)
 DEATH_MIN_INTERVAL = 8 * 60 * 60      # 8 часов между смертями
 DEATH_MAX_INTERVAL = 24 * 60 * 60     # 24 часа между смертями
 EMISSION_INTERVAL = 48 * 60 * 60      # 48 часов между выбросами
+ARTIFACT_INTERVAL = 4 * 60 * 60       # 4 часа между находками артефактов
+QUEST_INTERVAL = 12 * 60 * 60         # 12 часов между квестами
+GUIDE_INTERVAL = 6 * 60 * 60          # 6 часов между предложениями проводников
 
 # Вероятность выброса в момент отправки (10%)
 EMISSION_PROBABILITY = 0.1
@@ -40,7 +43,8 @@ STALKER_NAMES = [
     "Валик", "Лис", "Шустрый", "Кузьма", "Скелет", "Борода", "Веном",
     "Призрак", "Махно", "Филин", "Грей", "Клещ", "Шрам", "Волк",
     "Лед", "Малыш", "Профессор", "Сыч", "Лысый", "Рыжий", "Химик",
-    "Док", "Варяг", "Гвоздь", "Студент", "Шахтер", "Фантом", "Монгол"
+    "Док", "Варяг", "Гвоздь", "Студент", "Шахтер", "Фантом", "Монгол",
+    "Боцман", "Шептун", "Гоблин", "Кубик", "Псих", "Фикс"
 ]
 
 # Клички (прозвища)
@@ -48,8 +52,12 @@ STALKER_NICKNAMES = [
     "Снайпер", "Буйный", "Тихий", "Гром", "Косой", "Бродяга", "Ворон",
     "Седой", "Рваный", "Хромой", "Шептун", "Долговязый", "Пулеметчик",
     "Злой", "Добряк", "Кошатник", "Гитарист", "Барыга", "Сапер",
-    "Кузнец", "Шахтер", "Медведь", "Лиса", "Шакал", "Барсук"
+    "Кузнец", "Шахтер", "Медведь", "Лиса", "Шакал", "Барсук",
+    "Волкодав", "Гладиатор", "Клык", "Коготь", "Вихрь"
 ]
+
+# Группировки
+FACTIONS = ["сталкер", "бандит", "военный", "наемник", "монолит", "долг", "свобода", "эколог"]
 
 # Причины смерти
 DEATH_REASONS = [
@@ -68,47 +76,134 @@ LOCATIONS = [
     "Рыжий лес", "Армейские склады", "Дикая территория"
 ]
 
+# Артефакты
+ARTIFACTS = [
+    "Медуза", "Грави", "Пузырь", "Каменный цветок", "Слизень",
+    "Коготь", "Глаз", "Золотая рыбка", "Ночная звезда", "Капля",
+    "Лунный свет", "Выверт", "Кровь камня", "Душа", "Плоть",
+    "Щупальце", "Пленка", "Ведьмино желе", "Бенгальский огонь", "Морской еж"
+]
+
+# Задания и квесты
+QUESTS = [
+    "Принести артефакт 'Медуза' с Темной долины. Награда: 5000 RU",
+    "Зачистить подземелья Агропрома от мутантов. Награда: 8000 RU",
+    "Найти пропавшую группу сталкеров на Янтаре. Награда: 3000 RU",
+    "Сопроводить ученого до Янтаря. Награда: 10000 RU",
+    "Уничтожить банду на Свалке. Награда: 7000 RU",
+    "Доставить детектор на Кордон. Награда: 2000 RU",
+    "Разведать обстановку на Радаре. Награда: 15000 RU",
+    "Найти и доставить артефакт 'Коготь'. Награда: 12000 RU",
+    "Устранить контролера в подземельях. Награда: 20000 RU",
+    "Собрать образцы крови мутантов. Награда: 6000 RU"
+]
+
+# Предложения проводников
+GUIDE_OFFERS = [
+    "Проведу до Бара. Цена: 3000 RU",
+    "Группа на Янтарь, нужен еще один. Место сбора: Кордон",
+    "Иду на Радар, нужны попутчики. Оплата: проводка бесплатно",
+    "Срочно нужен проводник до ЧАЭС. Оплата: артефакт",
+    "Провожу до Лиманска. Знаю безопасный путь",
+    "Ищем опытного проводника на Юпитер. Оплата 5000 + хабар",
+    "На Армейские склады, идем завтра утром. Два места",
+    "Провожу группу через Выжигатель мозгов. Нужны добровольцы",
+    "На Припять, выдвигаемся через час. Снаряжение при себе",
+    "В Темную долину, плата 2000. Гарантирую безопасность"
+]
+
 # ==================== ФУНКЦИИ ГЕНЕРАЦИИ ====================
 def generate_death_message() -> str:
     """Генерирует сообщение о смерти сталкера"""
     name = random.choice(STALKER_NAMES)
     nickname = random.choice(STALKER_NICKNAMES)
+    faction = random.choice(FACTIONS)
     location = random.choice(LOCATIONS)
     reason = random.choice(DEATH_REASONS)
     
     templates = [
-        f"⚠️ Погиб сталкер {name} '{nickname}', {location}, {reason}.",
-        f"💀 Сталкер {name} {nickname} мертв, {location}, {reason}.",
-        f"☠️ Не вернулся с ходки {name} '{nickname}', {location}, {reason}.",
-        f"⚰️ Похоронили сталкера {name} '{nickname}', {location}, причина смерти: {reason}.",
-        f"📻 Внимание! {name} '{nickname}' погиб в {location}, {reason}."
+        f"⚠️ Погиб {faction} {name} '{nickname}', {location}, {reason}.",
+        f"💀 {faction} {name} {nickname} мертв, {location}, {reason}.",
+        f"☠️ Не вернулся с ходки {faction} {name} '{nickname}', {location}, {reason}.",
+        f"⚰️ Похоронили {faction} {name} '{nickname}', {location}, причина смерти: {reason}.",
+        f"📻 Внимание! {faction} {name} '{nickname}' погиб в {location}, {reason}."
     ]
     
     return random.choice(templates)
 
 def generate_emission_sequence() -> List[str]:
-    """Генерирует серию сообщений о выбросе"""
-    locations = [
-        "Кордон", "Свалка", "Темная долина", "Агропром", "Янтарь",
-        "Бар", "Радар", "ЧАЭС", "Припять", "Затон", "Юпитер"
-    ]
-    target_location = random.choice(locations)
-    
-    return [
+    """Генерирует серию сообщений о выбросе (4 сообщения)"""
+    messages = [
         "⚠️ ВНИМАНИЕ! ЗАРЕГИСТРИРОВАНА СЕЙСМИЧЕСКАЯ АКТИВНОСТЬ!",
-        f"🌪️ По данным экологов, в районе {target_location} начинается выброс!",
+        "🌪️ Прогнозируется выброс! Мощность: {} МЭр".format(random.randint(3, 7)),
         "🏃 Срочно укрыться в ближайшем убежище! Повторяю, всем укрыться!",
-        "📡 Прогнозируемая мощность: {} МЭр. Берегите себя, сталкеры!".format(random.randint(3, 7)),
-        "⏱️ До прихода волны: {} минут".format(random.randint(5, 15))
+        "⏱️ До прихода волны: {} минут. Берегите себя, сталкеры!".format(random.randint(5, 15))
     ]
+    return messages
 
-def get_next_death_time() -> int:
-    """Возвращает случайный интервал до следующей смерти в секундах"""
-    return random.randint(DEATH_MIN_INTERVAL, DEATH_MAX_INTERVAL)
+def generate_artifact_message() -> str:
+    """Генерирует сообщение о находке артефакта"""
+    name = random.choice(STALKER_NAMES)
+    nickname = random.choice(STALKER_NICKNAMES)
+    faction = random.choice(FACTIONS)
+    artifact = random.choice(ARTIFACTS)
+    location = random.choice(LOCATIONS)
+    price = random.randint(3, 15) * 1000
+    
+    templates = [
+        f"🎁 {faction} {name} '{nickname}' нашел артефакт '{artifact}' в {location}. Продает за {price} RU",
+        f"💰 Свежий артефакт! {faction} {name} {nickname} нашел '{artifact}' в {location}. Торг уместен",
+        f"💎 Внимание! В {location} найден артефакт '{artifact}'. Обращаться к {faction} {name} '{nickname}'",
+        f"⚡ {faction} {name} '{nickname}' продает редкий артефакт '{artifact}', найденный в {location}. Цена: {price} RU",
+        f"📢 {faction} {name} {nickname} сообщает о находке артефакта '{artifact}' в районе {location}. Предложения в ЛС"
+    ]
+    
+    return random.choice(templates)
 
-def get_next_emission_time() -> int:
-    """Возвращает интервал до следующего выброса (фиксированный 48ч)"""
-    return EMISSION_INTERVAL
+def generate_quest_message() -> str:
+    """Генерирует сообщение с заданием"""
+    quest = random.choice(QUESTS)
+    customer = random.choice(["ученый", "торговец", "сталкер", "бандит", "военный"])
+    
+    templates = [
+        f"📋 Задание от {customer}: {quest}",
+        f"⚡ Срочное задание ({customer}): {quest}",
+        f"📌 Внимание сталкеры! {customer} дает задание: {quest}",
+        f"🎯 Доска объявлений ({customer}): {quest}",
+        f"📢 {customer} ищет сталкеров для задания: {quest}"
+    ]
+    
+    return random.choice(templates)
+
+def generate_guide_message() -> str:
+    """Генерирует предложение проводника"""
+    offer = random.choice(GUIDE_OFFERS)
+    guide_name = random.choice(STALKER_NAMES)
+    guide_nick = random.choice(STALKER_NICKNAMES)
+    
+    return f"🚶 Проводник {guide_name} '{guide_nick}': {offer}"
+
+def generate_random_message() -> str:
+    """Генерирует случайное атмосферное сообщение"""
+    messages = [
+        "🎸 На базе слышна гитара... Кто-то поет про Зону",
+        "🍞 Приехал торговец с свежим хлебом. Будьте вежливы",
+        "⚡ Аномальная активность сегодня выше обычного",
+        "🌙 Говорят, в полнолуние мутанты особенно злые",
+        "☕ У Сидоровича свежий кофе. Заходите погреться",
+        "📻 Сталкерское радио передает музыку прошлого",
+        "🎲 В баре идет игра в покер. Кто смелый?",
+        "💊 Аптечки закончились у торговца. Будьте осторожны в ходке",
+        "🔦 Кто-то потерял фонарь на Кордоне. Спросите у Сидоровича",
+        "🐕 Слепые псы сегодня особенно активны. Держитесь группой",
+        "🌧️ Ожидается дождь. Проверьте герметичность костюмов",
+        "🎭 Маскировочные халаты в наличии у Бармена"
+    ]
+    return random.choice(messages)
+
+def get_next_interval(min_interval: int, max_interval: int) -> int:
+    """Возвращает случайный интервал в секундах"""
+    return random.randint(min_interval, max_interval)
 
 # ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
 @dp.message(Command("start"))
@@ -128,12 +223,16 @@ async def cmd_start(message: Message):
     
     await message.answer(
         "👋 Сталкер, добро пожаловать в Единую сталкерскую сеть!\n\n"
-        "Я буду присылать сводки о происшествиях в Зоне.\n"
+        "📡 Я буду присылать сводки о происшествиях в Зоне:\n"
+        "• 💀 Смерти сталкеров\n"
+        "• 🌪️ Предупреждения о выбросах\n"
+        "• 💎 Находки артефактов\n"
+        "• 📋 Квесты и задания\n"
+        "• 🚶 Предложения проводников\n\n"
         "Команды:\n"
         "/status - статус сети\n"
-        "/test_death - тестовая смерть\n"
-        "/test_emission - тестовый выброс\n"
-        "/chats - список активных чатов"
+        "/test - тестовые сообщения\n"
+        "/stop - остановить рассылку"
     )
 
 @dp.message(Command("status"))
@@ -154,43 +253,23 @@ async def cmd_status(message: Message):
         f"📡 Единая сталкерская сеть активна\n"
         f"🟢 Связь с Зоной устойчивая\n"
         f"📊 Режим: автоматическая рассылка\n"
-        f"👥 Активных чатов: {len(active_chats)}\n"
         f"📨 Отправлено сообщений: {chat_info['message_count']}"
     )
 
-@dp.message(Command("chats"))
-async def cmd_chats(message: Message):
-    """Показывает список активных чатов"""
-    if not active_chats:
-        await message.answer("❌ Нет активных чатов")
-        return
-    
-    chats_list = "\n".join([
-        f"• {info['name']} (ID: {chat_id}) - {info['message_count']} сообщ."
-        for chat_id, info in active_chats.items()
-    ])
-    
-    await message.answer(f"📋 Активные чаты:\n{chats_list}")
-
-@dp.message(Command("test_death"))
-async def cmd_test_death(message: Message):
-    """Тестовая отправка сообщения о смерти"""
+@dp.message(Command("test"))
+async def cmd_test(message: Message):
+    """Тестовая отправка всех типов сообщений"""
+    await message.answer("🔄 Тестовые сообщения:")
+    await asyncio.sleep(1)
     await message.answer(generate_death_message())
-    
-    # Обновляем счетчик
-    if message.chat.id in active_chats:
-        active_chats[message.chat.id]['message_count'] += 1
-
-@dp.message(Command("test_emission"))
-async def cmd_test_emission(message: Message):
-    """Тестовая отправка серии сообщений о выбросе"""
-    for msg in generate_emission_sequence():
-        await message.answer(msg)
-        await asyncio.sleep(2)  # Пауза между сообщениями
-    
-    # Обновляем счетчик
-    if message.chat.id in active_chats:
-        active_chats[message.chat.id]['message_count'] += len(generate_emission_sequence())
+    await asyncio.sleep(1)
+    await message.answer(generate_artifact_message())
+    await asyncio.sleep(1)
+    await message.answer(generate_quest_message())
+    await asyncio.sleep(1)
+    await message.answer(generate_guide_message())
+    await asyncio.sleep(1)
+    await message.answer(generate_random_message())
 
 @dp.message(Command("stop"))
 async def cmd_stop(message: Message):
@@ -217,16 +296,22 @@ async def handle_any_message(message: Message):
         }
         logger.info(f"Чат автоматически добавлен: {message.chat.title} (ID: {chat_id})")
         
-        # Отправляем приветственное сообщение (только при первом добавлении)
+        # Отправляем приветственное сообщение
         await message.answer(
             "👋 Приветствую, сталкер! Этот чат добавлен в Единую сталкерскую сеть.\n"
-            "Я буду присылать сводки о происшествиях в Зоне.\n"
             "Используй /start для получения информации."
         )
 
 # ==================== ФОНОВЫЕ ЗАДАЧИ ====================
-async def death_scheduler():
-    """Планировщик отправки сообщений о смерти"""
+async def message_scheduler():
+    """Планировщик отправки всех типов сообщений"""
+    last_death_time = datetime.now()
+    last_emission_time = datetime.now()
+    last_artifact_time = datetime.now()
+    last_quest_time = datetime.now()
+    last_guide_time = datetime.now()
+    last_random_time = datetime.now()
+    
     while True:
         try:
             if not active_chats:
@@ -234,87 +319,60 @@ async def death_scheduler():
                 await asyncio.sleep(60)
                 continue
             
-            # Ждем случайное время до следующей смерти
-            wait_time = get_next_death_time()
-            next_death = datetime.now() + timedelta(seconds=wait_time)
-            logger.info(f"Следующая смерть запланирована на {next_death.strftime('%Y-%m-%d %H:%M:%S')}")
-            logger.info(f"Активных чатов: {len(active_chats)}")
+            current_time = datetime.now()
+            messages_to_send = []
             
-            await asyncio.sleep(wait_time)
-            
-            # Генерируем сообщение
-            death_msg = generate_death_message()
-            
-            # Отправляем во все активные чаты
-            for chat_id in list(active_chats.keys()):
-                try:
-                    await bot.send_message(chat_id, death_msg)
-                    active_chats[chat_id]['message_count'] += 1
-                    logger.info(f"Отправлено сообщение о смерти в чат {chat_id}")
-                except Exception as e:
-                    logger.error(f"Ошибка отправки в чат {chat_id}: {e}")
-                    # Если бот заблокирован или удален из чата - удаляем из списка
-                    if "Forbidden" in str(e) or "chat not found" in str(e):
-                        logger.info(f"Удаляем чат {chat_id} из активных (бот удален)")
-                        active_chats.pop(chat_id, None)
-            
-            # С вероятностью 10% отправляем выброс
-            if random.random() < EMISSION_PROBABILITY:
-                logger.info("Инициируем выброс...")
-                await asyncio.sleep(random.randint(30, 300))  # Пауза 30сек-5мин
+            # Проверяем интервалы для каждого типа сообщений
+            if (current_time - last_death_time).total_seconds() > get_next_interval(DEATH_MIN_INTERVAL, DEATH_MAX_INTERVAL):
+                messages_to_send.append(("смерть", generate_death_message()))
+                last_death_time = current_time
                 
-                emission_msgs = generate_emission_sequence()
-                for msg in emission_msgs:
-                    for chat_id in list(active_chats.keys()):
-                        try:
-                            await bot.send_message(chat_id, msg)
-                            active_chats[chat_id]['message_count'] += 1
-                        except Exception as e:
-                            logger.error(f"Ошибка отправки выброса в чат {chat_id}: {e}")
-                            if "Forbidden" in str(e) or "chat not found" in str(e):
-                                active_chats.pop(chat_id, None)
-                    await asyncio.sleep(random.randint(30, 120))  # Пауза между сообщениями
-                logger.info("Серия сообщений о выбросе отправлена")
-                
-        except Exception as e:
-            logger.error(f"Ошибка в death_scheduler: {e}")
-            await asyncio.sleep(60)
-
-async def emission_scheduler():
-    """Планировщик отправки выбросов (раз в 2 дня)"""
-    while True:
-        try:
-            if not active_chats:
-                logger.info("Нет активных чатов, ждем...")
-                await asyncio.sleep(60)
-                continue
+                # Проверяем вероятность выброса
+                if random.random() < EMISSION_PROBABILITY:
+                    await asyncio.sleep(random.randint(30, 300))
+                    for msg in generate_emission_sequence():
+                        messages_to_send.append(("выброс", msg))
+                        await asyncio.sleep(random.randint(30, 120))
             
-            # Ждем 48 часов до следующего выброса
-            wait_time = get_next_emission_time()
-            next_emission = datetime.now() + timedelta(seconds=wait_time)
-            logger.info(f"Следующий плановый выброс запланирован на {next_emission.strftime('%Y-%m-%d %H:%M:%S')}")
+            if (current_time - last_emission_time).total_seconds() > EMISSION_INTERVAL:
+                for msg in generate_emission_sequence():
+                    messages_to_send.append(("выброс", msg))
+                last_emission_time = current_time
             
-            await asyncio.sleep(wait_time)
+            if (current_time - last_artifact_time).total_seconds() > ARTIFACT_INTERVAL:
+                messages_to_send.append(("артефакт", generate_artifact_message()))
+                last_artifact_time = current_time
             
-            # Отправляем серию сообщений о выбросе
-            logger.info("Начинаем плановый выброс...")
-            emission_msgs = generate_emission_sequence()
+            if (current_time - last_quest_time).total_seconds() > QUEST_INTERVAL:
+                messages_to_send.append(("квест", generate_quest_message()))
+                last_quest_time = current_time
             
-            for msg in emission_msgs:
+            if (current_time - last_guide_time).total_seconds() > GUIDE_INTERVAL:
+                messages_to_send.append(("проводник", generate_guide_message()))
+                last_guide_time = current_time
+            
+            # Случайные атмосферные сообщения (раз в 2-4 часа)
+            if random.random() < 0.3:  # 30% шанс при каждой проверке
+                messages_to_send.append(("атмосфера", generate_random_message()))
+            
+            # Отправляем все накопившиеся сообщения
+            for msg_type, msg_text in messages_to_send:
                 for chat_id in list(active_chats.keys()):
                     try:
-                        await bot.send_message(chat_id, msg)
+                        await bot.send_message(chat_id, msg_text)
                         active_chats[chat_id]['message_count'] += 1
+                        logger.info(f"Отправлено {msg_type} в чат {chat_id}")
                     except Exception as e:
-                        logger.error(f"Ошибка отправки выброса в чат {chat_id}: {e}")
+                        logger.error(f"Ошибка отправки в чат {chat_id}: {e}")
                         if "Forbidden" in str(e) or "chat not found" in str(e):
+                            logger.info(f"Удаляем чат {chat_id} из активных")
                             active_chats.pop(chat_id, None)
-                await asyncio.sleep(random.randint(45, 180))  # Пауза между сообщениями
             
-            logger.info("Плановый выброс завершен")
+            # Ждем перед следующей проверкой
+            await asyncio.sleep(300)  # Проверка каждые 5 минут
             
         except Exception as e:
-            logger.error(f"Ошибка в emission_scheduler: {e}")
+            logger.error(f"Ошибка в message_scheduler: {e}")
             await asyncio.sleep(60)
 
 # ==================== ЗАПУСК БОТА ====================
@@ -323,13 +381,11 @@ async def main():
     logger.info("Бот Единой сталкерской сети запускается...")
     logger.info("Ожидание добавления в чаты...")
     
-    # Запускаем планировщики как фоновые задачи
-    asyncio.create_task(death_scheduler())
-    asyncio.create_task(emission_scheduler())
+    # Запускаем планировщик как фоновую задачу
+    asyncio.create_task(message_scheduler())
     
     # Запускаем поллинг
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
